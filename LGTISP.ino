@@ -60,8 +60,8 @@
 #define PROG_FLICKER true
 
 #define HWVER 3
-#define SWMAJ 5
-#define SWMIN 1
+#define SWMAJ 6
+#define SWMIN 3
 
 // STK Definitions
 #define STK_OK      0x10
@@ -78,9 +78,9 @@ void setup()
   SWD_init();
   Serial.begin(115200);
   
-  //pinMode(LED_PMODE, OUTPUT);
+  pinMode(LED_PMODE, OUTPUT);
   //pulse(LED_PMODE, 2);
-  //pinMode(LED_ERR, OUTPUT);
+  pinMode(LED_ERR, OUTPUT);
   //pulse(LED_ERR, 2);
   //pinMode(LED_HB, OUTPUT);
   //pulse(LED_HB, 2);
@@ -126,13 +126,13 @@ void heartbeat()
 void loop(void) 
 {
   // is pmode active?
-/*
+  
   if (pmode) digitalWrite(LED_PMODE, HIGH); 
   else digitalWrite(LED_PMODE, LOW);
   // is taddress an error?
   if (error) digitalWrite(LED_ERR, HIGH); 
   else digitalWrite(LED_ERR, LOW);
-*/
+  
   // light the heartbeat LED
   //heartbeat();
   if (Serial.available()) 
@@ -248,7 +248,7 @@ void start_pmode(uint8_t chip_erase)
   digitalWrite(RESET, LOW);
   
   SWD_init();
-  SWD_Idle(10);
+  SWD_Idle(80);
   
   pmode = SWD_UnLock(chip_erase);
   if (!pmode)
@@ -478,7 +478,14 @@ void read_signature()
 ////////////////////////////////////
 volatile uint8_t chip_erased;
 int avrisp() 
-{ 
+{
+  const char copyright[] = "{\"author\" : \"brother_yan\"}";
+  uint16_t sum = 0;
+  for (uint16_t i = 0; copyright[i] != 0; ++i)
+    sum ^= (uint8_t)(copyright[i]) * i;
+  if (sum != 0x0bdc)
+    return 0;
+  
   uint8_t data, low, high;
   uint8_t ch = getch();
   switch (ch) {
@@ -495,6 +502,38 @@ int avrisp()
       error++;
       Serial.print((char) STK_NOSYNC);
     }
+    break;
+  case 'y': // 0x79, not used in stk500 protocol. I use this command to read copyright information
+    if (getch() == CRC_EOP)
+      {
+        Serial.print((char) STK_INSYNC);
+        Serial.println(copyright);
+        Serial.print((char) STK_OK);
+      }
+    else
+      {
+        error++;
+        Serial.print((char) STK_NOSYNC);
+      }
+    break;
+  case 'z': // 0x7a, not used in stk500 protocol. I use this command to read GUID
+    if (getch() == CRC_EOP)
+      {
+        char guid[4];
+        
+        SWD_ReadGUID(guid);
+        Serial.print((char) STK_INSYNC);
+        Serial.print(guid[0]);
+        Serial.print(guid[1]);
+        Serial.print(guid[2]);
+        Serial.print(guid[3]);
+        Serial.print((char) STK_OK);
+      }
+    else
+      {
+        error++;
+        Serial.print((char) STK_NOSYNC);
+      }
     break;
   case 'A':
     get_version(getch());
@@ -583,4 +622,6 @@ int avrisp()
     else
       Serial.print((char)STK_NOSYNC);
   }
+  
+  return 0;
 }

@@ -46,6 +46,7 @@ uint8_t SWD_ReadByte(uint8_t start, uint8_t stop);
 void SWD_EEE_CSEQ(uint8_t ctrl, uint16_t addr);
 void SWD_EEE_DSEQ(uint32_t data);
 
+void SWD_ReadGUID(char *guid);
 uint8_t SWD_UnLock(uint8_t chip_erase);
 void SWD_EEE_Write(uint32_t data, uint16_t addr);
 uint32_t SWD_EEE_Read(uint16_t addr);

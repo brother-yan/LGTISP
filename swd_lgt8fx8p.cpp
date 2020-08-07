@@ -5,8 +5,8 @@ void SWD_init()
   // set to output
   SWDIF_DIR |= (SWDIF_CLK | SWDIF_DAT);
   // clear output
-  SWD_CLR();
-  SWC_CLR();
+  SWD_SET();
+  SWC_SET();
 }
 
 void SWD_exit()
@@ -25,7 +25,7 @@ void SWD_exit()
   
   SWD_Idle(40);
   
-  SWDIF_DIR &= ~(SWDIF_CLK | SWDIF_DAT);
+  //SWDIF_DIR &= ~(SWDIF_CLK | SWDIF_DAT);
 }
 
 void SWD_WriteByte(uint8_t start, uint8_t data, uint8_t stop)
@@ -130,6 +130,18 @@ void SWD_ReadSWDID(char *pdata)
   SWD_Idle(4);
 }
 
+void SWD_ReadGUID(char *guid)
+{
+  SWD_Idle(10);
+  SWD_WriteByte(1, 0xa8, 1);
+  SWD_Idle(4);
+  guid[0] = SWD_ReadByte(1, 0);
+  guid[1] = SWD_ReadByte(0, 0);
+  guid[2] = SWD_ReadByte(0, 0);
+  guid[3] = SWD_ReadByte(0, 1);
+  SWD_Idle(4);
+}
+
 void SWD_SWDEN()
 {
   SWD_WriteByte(1, 0xd0, 0);
@@ -217,6 +229,20 @@ void SWD_ChipErase()
   SWD_EEE_CSEQ(0x00, 1);
 }
 
+uint8_t crack() // 破解读保护(目前只能读出除了前1k以外的flash，前1k会被擦除)
+{
+  SWD_EEE_CSEQ(0x00, 1);
+  SWD_EEE_CSEQ(0x98, 1);
+  SWD_EEE_CSEQ(0x92, 1); // 会擦除flash的第一页(1024 bytes)
+  delay(200);
+  SWD_EEE_CSEQ(0x9e, 1); // 解锁
+  delay(200);
+  SWD_EEE_CSEQ(0x8a, 1);
+  delay(20);
+  SWD_EEE_CSEQ(0x88, 1);
+  SWD_EEE_CSEQ(0x00, 1);
+}
+
 uint32_t SWD_EEE_Read(uint16_t addr)
 {
   uint32_t data;
@@ -258,7 +284,10 @@ uint8_t SWD_UnLock(uint8_t chip_erase)
   if (swdid[0] == 0x3e) // 第一次解锁
     SWD_UnLock0();
   
-  SWD_ChipErase();
+  if (chip_erase)
+    SWD_ChipErase();
+  else
+    crack();
   
   if (swdid[0] == 0x3e) // 第一次解锁
     {

@@ -21,7 +21,10 @@ This is an implementation of LGT8Fx8P ISP download protocol. You can make arduin
    4. click **Burn Bootloader**!
 
 ## advanced usage
-Explore yourself!
+- You can read GUID!
+- You can read almost all flash after power-down! I crack it, haha
+- more details : [LGTISP programmer](https://oshwhub.com/brother_yan/LGTISP)
+- Explore yourself!
 
 ## author
 brother_yan
@@ -29,3 +32,4 @@ brother_yan
 ## reference
 [LarduinoISP](https://github.com/LGTMCU/LarduinoISP)  
 [ISP4LGT8F328P](https://github.com/nicechao/ISP4LGT8F328P)
+
