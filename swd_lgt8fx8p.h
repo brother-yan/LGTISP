@@ -51,4 +51,32 @@ uint8_t SWD_UnLock(uint8_t chip_erase);
 void SWD_EEE_Write(uint32_t data, uint16_t addr);
 uint32_t SWD_EEE_Read(uint16_t addr);
 
+void write_flash_pages(uint32_t addr, uint8_t buf[], int size);
+void flash_read_page(uint32_t addr, uint8_t buf[], int size);
+extern volatile uint8_t pmode;
+void start_pmode(uint8_t chip_erase);
+void end_pmode();
+
+
+
+
+class LGTISPClass
+{
+  private:
+    char guid[4];
+    volatile uint8_t chip_erased;
+  
+  public:
+    LGTISPClass();
+    bool begin();
+    void end();
+    bool write(uint32_t addr, uint8_t buf[], int size);
+    bool read(uint32_t addr, uint8_t buf[], int size);
+    
+    bool isPmode();
+    uint32_t getGUID(); // return a 4 bytes guid
+};
+
+extern LGTISPClass LGTISP;
+
 #endif

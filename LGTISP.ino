@@ -53,7 +53,6 @@
 #error : Please change the macro SERIAL_RX_BUFFER_SIZE to 250
 #endif
 
-#define RESET	10
 #define LED_HB    9
 #define LED_ERR   8
 #define LED_PMODE 7
@@ -61,7 +60,7 @@
 
 #define HWVER 3
 #define SWMAJ 6
-#define SWMIN 3
+#define SWMIN 4
 
 // STK Definitions
 #define STK_OK      0x10
@@ -75,7 +74,6 @@ void pulse(int pin, int times);
 
 void setup() 
 {
-  SWD_init();
   Serial.begin(115200);
   
   pinMode(LED_PMODE, OUTPUT);
@@ -87,7 +85,6 @@ void setup()
 }
 
 uint8_t error=0;
-uint8_t pmode=0;
 
 // address for reading and writing, set by 'U' command
 int address;
@@ -126,8 +123,7 @@ void heartbeat()
 void loop(void) 
 {
   // is pmode active?
-  
-  if (pmode) digitalWrite(LED_PMODE, HIGH); 
+  if (LGTISP.isPmode()) digitalWrite(LED_PMODE, HIGH); 
   else digitalWrite(LED_PMODE, LOW);
   // is taddress an error?
   if (error) digitalWrite(LED_ERR, HIGH); 
@@ -240,30 +236,6 @@ void set_parameters()
 
 }
 
-void start_pmode(uint8_t chip_erase) 
-{
-  digitalWrite(RESET, HIGH);
-  pinMode(RESET, OUTPUT);
-  delay(20);
-  digitalWrite(RESET, LOW);
-  
-  SWD_init();
-  SWD_Idle(80);
-  
-  pmode = SWD_UnLock(chip_erase);
-  if (!pmode)
-    pmode = SWD_UnLock(chip_erase);
-}
-
-void end_pmode()
-{
-  SWD_exit();
-  pmode = 0;
-  
-  digitalWrite(RESET, HIGH);
-  pinMode(RESET, INPUT);
-}
-
 void universal() 
 {
   fill(4);
@@ -292,41 +264,23 @@ void universal()
 
 void write_flash(int length) 
 {
-  fill(length);
-  if (CRC_EOP == getch()) {
-    Serial.print((char) STK_INSYNC);
-    Serial.print((char) write_flash_pages(length));
-  } 
-  else {
-    error++;
-    Serial.print((char) STK_NOSYNC);
-  }
-}
-
-uint8_t write_flash_pages(int length)
-{
-  int addr = address / 2;
+  int addr = address * 2; // 字节地址
   /*
   lgt8fx8p的flash是按4字节编址的，而avr是按2字节编址的，avrdude传过来的是按2字节编址的address
   avrisp()函数中也有证实：
   case 'U': // set address (word)
   */
   
-  SWD_EEE_CSEQ(0x00, addr);
-  SWD_EEE_CSEQ(0x84, addr);
-  SWD_EEE_CSEQ(0x86, addr);
-  
-  for (int i = 0; i < length; i += 4)
-    {
-      SWD_EEE_Write(*((uint32_t *)(&buff[i])), addr);
-      ++addr;
-    }
-  
-  SWD_EEE_CSEQ(0x82, addr - 1);
-  SWD_EEE_CSEQ(0x80, addr - 1);
-  SWD_EEE_CSEQ(0x00, addr - 1);
-  
-  return STK_OK;
+  fill(length);
+  if (CRC_EOP == getch()) {
+    Serial.print((char) STK_INSYNC);
+    LGTISP.write(addr, buff, length);
+    Serial.print((char) STK_OK);
+  } 
+  else {
+    error++;
+    Serial.print((char) STK_NOSYNC);
+  }
 }
 
 #define EECHUNK (32)
@@ -395,33 +349,6 @@ void program_page()
   return;
 }
 
-char flash_read_page(int length)
-{
-  int addr = address / 2;
-  /*
-  lgt8fx8p的flash是按4字节编址的，而avr是按2字节编址的，avrdude传过来的是按2字节编址的address
-  avrisp()函数中也有证实：
-  case 'U': // set address (word)
-  */
-  
-  SWD_EEE_CSEQ(0x00, 0x01);
-  
-  uint32_t data;
-  for (int i = 0; i < length; ++i)
-    {
-      if (i % 4 == 0)
-        {
-          data = SWD_EEE_Read(addr);
-          ++addr;
-        }
-      Serial.print((char)((uint8_t *)&data)[i % 4]);
-    }
-  
-  SWD_EEE_CSEQ(0x00, 0x01);
-  
-  return STK_OK;
-}
-
 char eeprom_read_page(uint16_t length) 
 {
   // address again we have a word address
@@ -438,7 +365,13 @@ char eeprom_read_page(uint16_t length)
 void read_page() 
 {
   char result = (char)STK_FAILED;
-
+  int addr = address * 2; // 字节地址
+  /*
+  lgt8fx8p的flash是按4字节编址的，而avr是按2字节编址的，avrdude传过来的是按2字节编址的address
+  avrisp()函数中也有证实：
+  case 'U': // set address (word)
+  */
+  
   uint16_t length = getch() << 8;
   length += getch();
   char memtype = getch();
@@ -449,7 +382,13 @@ void read_page()
   }
   Serial.print((char) STK_INSYNC);
 
-  if (memtype == 'F') result = flash_read_page(length);
+  if (memtype == 'F')
+    {
+      LGTISP.read(addr, buff, length);
+      for (int i = 0; i < length; ++i)
+        Serial.print((char)buff[i]);
+      result = STK_OK;
+    }
   if (memtype == 'E') result = eeprom_read_page(length);
   Serial.print(result);
   return;
@@ -476,7 +415,6 @@ void read_signature()
 
 ////////////////////////////////////
 ////////////////////////////////////
-volatile uint8_t chip_erased;
 int avrisp() 
 {
   const char copyright[] = "{\"author\" : \"brother_yan\"}";
@@ -521,7 +459,7 @@ int avrisp()
       {
         char guid[4];
         
-        SWD_ReadGUID(guid);
+        *((uint32_t *)guid) = LGTISP.getGUID();
         Serial.print((char) STK_INSYNC);
         Serial.print(guid[0]);
         Serial.print(guid[1]);
@@ -549,13 +487,12 @@ int avrisp()
     break;
 
   case 'P':
-    if (pmode) {
+    if (LGTISP.isPmode()) {
       pulse(LED_ERR, 3);
     } else {
-      start_pmode(0);
-      chip_erased = 0;
+      LGTISP.begin();
     }
-    if (pmode)
+    if (LGTISP.isPmode())
       empty_reply();
     else
       {
@@ -584,13 +521,6 @@ int avrisp()
     empty_reply();
     break;
   case 0x64: //STK_PROG_PAGE
-    if (!chip_erased)
-      {
-        error = 0;
-        end_pmode();
-        start_pmode(1);
-        chip_erased = 1;
-      }
     program_page();
     break;
   case 0x74: //STK_READ_PAGE 't'
@@ -601,7 +531,7 @@ int avrisp()
     break;
   case 'Q': //0x51
     error=0;
-    end_pmode();
+    LGTISP.end();
     empty_reply();
     break;
   case 0x75: //STK_READ_SIGN 'u'

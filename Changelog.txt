@@ -9,3 +9,12 @@ v6.2 -> v6.3
 - 2020.8.3
 - 重磅！！！破解了lgt单片机不能读取flash的神话！！！目前可以读取 除了前1k之外 的所有flash，但是会擦除前1k flash
 - 添加STK500命令'y'(STK500未定义这个命令)，将它定义为获版权信息
+
+v6.3 -> v6.4
+- 2020.11.12
+- crack()函数的返回值类型从uint8_t 变成void
+- 将start_pmode()、end_pmode()从*.ino移到库文件swd_lgt8fx8p.cpp中，并改写RESET引脚操作方式
+- 将变量pmode移到库文件swd_lgt8fx8p.cpp中
+- 将write_flash_pages()、flash_read_page()移到库文件swd_lgt8fx8p.cpp中，并将传入地址addr改成字节地址
+- 构建一个类：LGTISPClass，将操作都封装进去
+- *.ino中全部使用LGTISPClass的对象：LGTISP，不再使用底层函数

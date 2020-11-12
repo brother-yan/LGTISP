@@ -229,7 +229,7 @@ void SWD_ChipErase()
   SWD_EEE_CSEQ(0x00, 1);
 }
 
-uint8_t crack() // 破解读保护(目前只能读出除了前1k以外的flash，前1k会被擦除)
+void crack() // 破解读保护(目前只能读出除了前1k以外的flash，前1k会被擦除)
 {
   SWD_EEE_CSEQ(0x00, 1);
   SWD_EEE_CSEQ(0x98, 1);
@@ -341,3 +341,131 @@ uint8_t SWD_UnLock(uint8_t chip_erase)
   
   return 1;
 }
+
+void write_flash_pages(uint32_t addr, uint8_t buf[], int size)
+{
+  addr /= 4; // lgt8fx8p的flash是按4字节编址的，而传入的参数是字节地址
+  
+  SWD_EEE_CSEQ(0x00, addr);
+  SWD_EEE_CSEQ(0x84, addr);
+  SWD_EEE_CSEQ(0x86, addr);
+  
+  for (int i = 0; i < size; i += 4)
+    {
+      SWD_EEE_Write(*((uint32_t *)(&buf[i])), addr);
+      ++addr;
+    }
+  
+  SWD_EEE_CSEQ(0x82, addr - 1);
+  SWD_EEE_CSEQ(0x80, addr - 1);
+  SWD_EEE_CSEQ(0x00, addr - 1);
+}
+
+void flash_read_page(uint32_t addr, uint8_t buf[], int size)
+{
+  addr /= 4; // lgt8fx8p的flash是按4字节编址的，而传入的参数是字节地址
+  
+  SWD_EEE_CSEQ(0x00, 0x01);
+  
+  uint32_t data;
+  for (int i = 0; i < size; ++i)
+    {
+      if (i % 4 == 0)
+        {
+          data = SWD_EEE_Read(addr);
+          ++addr;
+        }
+      buf[i] = ((uint8_t *)&data)[i % 4];
+    }
+  
+  SWD_EEE_CSEQ(0x00, 0x01);
+}
+
+volatile uint8_t pmode = 0;
+void start_pmode(uint8_t chip_erase)
+{
+  RSTN_SET(); // digitalWrite(RESET, HIGH);
+  RSTN_OUD(); // pinMode(RESET, OUTPUT);
+  delay(20);
+  RSTN_CLR(); // digitalWrite(RESET, LOW);
+  
+  SWD_init();
+  SWD_Idle(80);
+  
+  pmode = SWD_UnLock(chip_erase);
+  if (!pmode)
+    pmode = SWD_UnLock(chip_erase);
+}
+
+void end_pmode()
+{
+  SWD_exit();
+  pmode = 0;
+  
+  RSTN_SET(); // digitalWrite(RESET, HIGH);
+  RSTN_IND(); // pinMode(RESET, INPUT);
+}
+
+
+
+
+LGTISPClass::LGTISPClass()
+{
+  SWD_init();
+  chip_erased = 0;
+}
+
+bool LGTISPClass::begin()
+{
+  if (!pmode)
+    {
+      start_pmode(0);
+      chip_erased = 0;
+    }
+  
+  SWD_ReadGUID(guid);
+  
+  return pmode;
+}
+
+void LGTISPClass::end()
+{
+  end_pmode();
+}
+
+bool LGTISPClass::write(uint32_t addr, uint8_t buf[], int size)
+{
+  if (!chip_erased)
+      {
+        end_pmode();
+        start_pmode(1);
+        chip_erased = 1;
+      }
+  
+  if (pmode)
+    write_flash_pages(addr, buf, size);
+  
+  return pmode;
+}
+
+bool LGTISPClass::read(uint32_t addr, uint8_t buf[], int size)
+{
+  if (pmode)
+    flash_read_page(addr, buf, size);
+  
+  return pmode;
+}
+
+bool LGTISPClass::isPmode()
+{
+  return pmode;
+}
+
+uint32_t LGTISPClass::getGUID() // return a 4 bytes guid
+{
+  SWD_ReadGUID(guid);
+  
+  return *((uint32_t *)guid);
+}
+
+LGTISPClass LGTISP;
